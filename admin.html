@@ -1257,6 +1257,29 @@
       ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
       : null;
 
+    // Supabase Global Realtime Broadcast Channel across ALL devices
+    let globalAdminRealtimeChannel = null;
+    if (sbAdminClient) {
+      try {
+        globalAdminRealtimeChannel = sbAdminClient.channel('nothave_global_live_room');
+        globalAdminRealtimeChannel
+          .on('broadcast', { event: 'order_update' }, () => {
+            if (typeof fetchAndRenderOrders === 'function') fetchAndRenderOrders();
+            if (typeof fetchAndRenderDashboardKPIs === 'function') fetchAndRenderDashboardKPIs();
+          })
+          .on('broadcast', { event: 'book_update' }, () => {
+            if (typeof fetchAdminInventory === 'function') fetchAdminInventory();
+          })
+          .on('broadcast', { event: 'community_message' }, () => {
+            if (typeof renderAdminCommunityMessages === 'function') renderAdminCommunityMessages();
+            if (typeof renderAdminPendingRequests === 'function') renderAdminPendingRequests();
+          })
+          .subscribe();
+      } catch (e) {
+        console.warn("Admin global realtime init note:", e);
+      }
+    }
+
     const BACKEND_URL = (window.location.origin && window.location.origin.includes(':8080'))
       ? ''
       : 'http://localhost:8080';
@@ -3763,11 +3786,23 @@
         promoBroadcast.postMessage({ type: "PROMO_UPDATED", data: promoData });
       } catch (e) {}
 
+      if (globalAdminRealtimeChannel) {
+        try {
+          globalAdminRealtimeChannel.send({
+            type: 'broadcast',
+            event: 'promo_update',
+            payload: promoData
+          });
+        } catch (rtErr) {
+          console.warn("Realtime promo broadcast note:", rtErr);
+        }
+      }
+
       const displayEl = document.getElementById("currentPromoTextDisplay");
       if (displayEl) displayEl.innerText = `${text}${discount > 0 ? ` (ลด ${discount}%)` : ''}`;
 
       logAdminActivity("อัปเดตโปรโมชัน", `แอดมินตั้งค่าโปรโมชัน "${text}" ส่วนลด ${discount}% รหัส [${code}]`);
-      alert(`✓ บันทึกและปรับปรุงโปรโมชันหน้าร้านสำเร็จเรียบร้อยแล้ว!\nข้อความ: "${text}"\nส่วนลด: ${discount}%\nมีผลต่อหน้าร้านทันทีแบบ Real-time ครับ`);
+      alert(`✓ บันทึกและปรับปรุงโปรโมชันหน้าร้านสำเร็จเรียบร้อยแล้ว!\nข้อความ: "${text}"\nส่วนลด: ${discount}%\nมีผลต่อหน้าร้านทันทีแบบ Real-time ทุกเครื่องครับ`);
     }
 
     // ========================================================

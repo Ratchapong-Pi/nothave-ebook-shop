@@ -16,6 +16,60 @@ const sbClient = (window.supabase && typeof window.supabase.createClient === 'fu
   ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY) 
   : null;
 
+// Supabase Global Realtime Broadcast Channel across ALL devices / browsers
+let globalRealtimeChannel = null;
+if (sbClient) {
+  try {
+    globalRealtimeChannel = sbClient.channel('nothave_global_live_room');
+    globalRealtimeChannel
+      .on('broadcast', { event: 'promo_update' }, (msg) => {
+        if (msg && msg.payload) {
+          try {
+            localStorage.setItem("nothave_active_promotion", JSON.stringify(msg.payload));
+            if (typeof updatePromoHeaders === 'function') updatePromoHeaders();
+            if (typeof renderBooksGrid === 'function') renderBooksGrid();
+            if (typeof renderFeaturedShelves === 'function') renderFeaturedShelves();
+          } catch (e) {}
+        }
+      })
+      .on('broadcast', { event: 'book_update' }, () => {
+        if (typeof fetchEbooks === 'function') fetchEbooks();
+      })
+      .on('broadcast', { event: 'order_update' }, () => {
+        console.log("Live order update received via Supabase Realtime");
+      })
+      .on('broadcast', { event: 'community_message' }, (msg) => {
+        if (msg && msg.payload) {
+          try {
+            const list = JSON.parse(localStorage.getItem("nothave_community_messages") || "[]");
+            if (!list.some(m => m.id === msg.payload.id)) {
+              list.unshift(msg.payload);
+              localStorage.setItem("nothave_community_messages", JSON.stringify(list.slice(0, 100)));
+              if (typeof renderCommunityMessages === 'function') renderCommunityMessages();
+            }
+          } catch (e) {}
+        }
+      })
+      .on('broadcast', { event: 'role_update' }, (msg) => {
+        if (msg && msg.payload && currentUser) {
+          const userEmail = (currentUser.email || "").toLowerCase().trim();
+          const targetEmail = (msg.payload.email || "").toLowerCase().trim();
+          if (userEmail === targetEmail) {
+            currentUser.role_id = msg.payload.role_id;
+            sessionStorage.setItem("nothave_current_user", JSON.stringify(currentUser));
+            if (typeof updateAuthUI === 'function') updateAuthUI();
+            alert(`🎉 ผู้ดูแลระบบได้อนุมัติปรับบทบาทของคุณเป็น ${msg.payload.role_name || (msg.payload.role_id === 2 ? 'Admin' : 'Writer')} เรียบร้อยแล้ว`);
+          }
+        }
+      })
+      .subscribe((status) => {
+        console.log("Supabase Realtime Channel Status:", status);
+      });
+  } catch (err) {
+    console.warn("Global Realtime setup note:", err);
+  }
+}
+
 // Backend API Base URL (works seamlessly across localhost:8080, LiveServer 5500, and file://)
 const BACKEND_URL = (window.location.origin && window.location.origin.includes(':8080')) 
   ? '' 
@@ -447,19 +501,27 @@ function createBookCardHTML(book) {
   const heartColor = isFav ? '#e73636' : '#888';
   const hasPurchased = typeof userHasConfirmedOrder === 'function' ? userHasConfirmedOrder(book.ebook_id) : false;
 
-  // คำนวณราคาโปรโมชันและเปอร์เซ็นต์ส่วนลดแบบ Real-time
-  let displayPrice = book.price;
-  let originalPrice = book.original_price;
+  // คำนวณราคาโปรโมชันและเปอร์เซ็นต์ส่วนลดแบบ Real-time ตามที่ Admin ตั้งค่า
+  const promoDiscount = (activePromo && activePromo.discount_percent !== undefined && activePromo.discount_percent !== null) 
+    ? Number(activePromo.discount_percent) 
+    : 0;
+
+  const baseOriginalPrice = Number(book.original_price || book.price || 169);
+  let displayPrice = Number(book.price);
+  let originalPrice = baseOriginalPrice;
   let discountPct = 0;
 
-  if (originalPrice && originalPrice > displayPrice) {
-    discountPct = Math.round(((originalPrice - displayPrice) / originalPrice) * 100);
-  } else if (activePromo.discount_percent > 0) {
-    discountPct = activePromo.discount_percent;
-    // คำนวณราคาเต็มเดิมจากราคาขายปัจจุบัน
-    originalPrice = displayPrice / (1 - (discountPct / 100));
+  if (promoDiscount > 0) {
+    discountPct = promoDiscount;
+    originalPrice = baseOriginalPrice;
+    displayPrice = Math.round(originalPrice * (1 - (promoDiscount / 100)) * 100) / 100;
+  } else if (book.original_price && book.original_price > book.price) {
+    discountPct = Math.round(((book.original_price - book.price) / book.original_price) * 100);
+    originalPrice = Number(book.original_price);
+    displayPrice = Number(book.price);
   } else {
     originalPrice = displayPrice;
+    discountPct = 0;
   }
 
   const isSale = discountPct > 0;
@@ -798,16 +860,25 @@ function addToCart(bookId) {
   const book = allEbooks.find(b => b.ebook_id === bookId);
   if (!book) return;
 
+  const activePromo = getActivePromotion();
+  const promoDiscount = (activePromo && activePromo.discount_percent !== undefined) ? Number(activePromo.discount_percent) : 0;
+  const baseOriginalPrice = Number(book.original_price || book.price || 169);
+  let effectivePrice = Number(book.price);
+  if (promoDiscount > 0) {
+    effectivePrice = Math.round(baseOriginalPrice * (1 - (promoDiscount / 100)) * 100) / 100;
+  }
+
   const existing = cart.find(item => item.ebook_id === bookId);
   if (existing) {
     existing.quantity = (existing.quantity || 1) + 1;
+    existing.price = effectivePrice;
   } else {
-    cart.push({ ...book, quantity: 1 });
+    cart.push({ ...book, price: effectivePrice, original_price: baseOriginalPrice, quantity: 1 });
   }
 
   saveCart();
   updateCartBadge();
-  logUserActivity("เพิ่มลงรถเข็น", `เพิ่ม "${book.title}" (฿${book.price}) ลงในตะกร้า`);
+  logUserActivity("เพิ่มลงรถเข็น", `เพิ่ม "${book.title}" (฿${effectivePrice.toFixed(2)}) ลงในตะกร้า`);
   showCustomAlert({
     type: "success",
     title: "เพิ่มลงรถเข็นเรียบร้อย",

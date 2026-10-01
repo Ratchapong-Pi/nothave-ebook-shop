@@ -2,9 +2,9 @@
 ## ชื่อระบบ: NOT HAVE A BOOK SHOP (บักบ่ได้หนังสือ)
 **รายวิชา:** Database Mini Project (100 คะแนนเต็ม)  
 **ระบบฐานข้อมูล (DBMS):** PostgreSQL (Supabase Cloud RDBMS)  
-**URL ระบบต้นแบบ (Prototype):** `http://localhost:8080/index.html` (หรือเปิดตรงผ่าน Browser)  
+**URL ระบบต้นแบบออนไลน์ (Live URL):** `https://ratchapong-pi.github.io/nothave-ebook-shop/`  
 **URL ระบบฐานข้อมูล:** `https://qmpaatmniwagzijazzxb.supabase.co`  
-**เทคโนโลยีที่ใช้:** HTML5, Vanilla CSS3 (Book☆Walker Theme), JavaScript (ES6+), Supabase Client API, PDF.js  
+**เทคโนโลยีที่ใช้:** HTML5, Vanilla CSS3 (Book☆Walker Theme), JavaScript (ES6+), Supabase Client API & Real-time WebSockets, PDF.js  
 
 ---
 
