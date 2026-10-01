@@ -16,12 +16,52 @@ const sbClient = (window.supabase && typeof window.supabase.createClient === 'fu
   ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY) 
   : null;
 
-// Supabase Global Realtime Broadcast Channel across ALL devices / browsers
+// Supabase Global Realtime Broadcast Channel & Database Change Listener across ALL devices / browsers
 let globalRealtimeChannel = null;
+
+function broadcastRealtimeEvent(event, payload = {}) {
+  try {
+    if (globalRealtimeChannel) {
+      globalRealtimeChannel.send({
+        type: 'broadcast',
+        event: event,
+        payload: payload
+      });
+    }
+  } catch (err) {
+    console.warn("Realtime broadcast note:", event, err);
+  }
+}
+
 if (sbClient) {
   try {
     globalRealtimeChannel = sbClient.channel('nothave_global_live_room');
     globalRealtimeChannel
+      // 1. Postgres Database Table Level Changes (Instant Realtime Sync)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'ebooks' }, (payload) => {
+        console.log("⚡ Supabase Realtime: ebooks table changed", payload);
+        if (typeof fetchBooks === 'function') fetchBooks();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, (payload) => {
+        console.log("⚡ Supabase Realtime: orders table changed", payload);
+        if (currentUser && typeof openOrdersModal === 'function') {
+          // หากผู้ใช้กำลังเปิดดูรายการสั่งซื้อ ให้อัปเดตคำสั่งซื้อล่าสุดทันที
+          const ordersModal = document.getElementById("ordersModal");
+          if (ordersModal && ordersModal.classList.contains("active")) {
+            openOrdersModal();
+          }
+        }
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'users' }, (payload) => {
+        console.log("⚡ Supabase Realtime: users table changed", payload);
+        if (payload && payload.new && currentUser && (payload.new.email === currentUser.email || payload.new.user_id === currentUser.id || payload.new.user_id === currentUser.user_id)) {
+          currentUser.role_id = payload.new.role_id;
+          currentUser.points = payload.new.points !== undefined ? payload.new.points : currentUser.points;
+          localStorage.setItem("nothave_user", JSON.stringify(currentUser));
+          if (typeof updateAuthUI === 'function') updateAuthUI();
+        }
+      })
+      // 2. Realtime Broadcast Events
       .on('broadcast', { event: 'promo_update' }, (msg) => {
         if (msg && msg.payload) {
           try {
@@ -33,10 +73,24 @@ if (sbClient) {
         }
       })
       .on('broadcast', { event: 'book_update' }, () => {
-        if (typeof fetchEbooks === 'function') fetchEbooks();
+        if (typeof fetchBooks === 'function') fetchBooks();
       })
-      .on('broadcast', { event: 'order_update' }, () => {
-        console.log("Live order update received via Supabase Realtime");
+      .on('broadcast', { event: 'order_update' }, (msg) => {
+        console.log("⚡ Live order update received via Supabase Realtime:", msg);
+        if (msg && msg.payload && currentUser) {
+          const userEmail = (currentUser.email || "").toLowerCase().trim();
+          const targetEmail = (msg.payload.email || "").toLowerCase().trim();
+          if (userEmail === targetEmail) {
+            // ซิงก์คำสั่งซื้อของผู้ใช้อัตโนมัติ ปลดล็อกหนังสือที่ซื้อทันที
+            const key = `nothave_user_orders_${userEmail}`;
+            const orders = JSON.parse(localStorage.getItem(key) || "[]");
+            const targetOrd = orders.find(o => o.order_id === msg.payload.order_id || o.id === msg.payload.order_id);
+            if (targetOrd) {
+              targetOrd.status = msg.payload.status || "confirmed";
+              localStorage.setItem(key, JSON.stringify(orders));
+            }
+          }
+        }
       })
       .on('broadcast', { event: 'community_message' }, (msg) => {
         if (msg && msg.payload) {
@@ -70,7 +124,7 @@ if (sbClient) {
           const targetEmail = (msg.payload.email || "").toLowerCase().trim();
           if (userEmail === targetEmail) {
             currentUser.role_id = msg.payload.role_id;
-            sessionStorage.setItem("nothave_current_user", JSON.stringify(currentUser));
+            localStorage.setItem("nothave_user", JSON.stringify(currentUser));
             if (typeof updateAuthUI === 'function') updateAuthUI();
             alert(`🎉 ผู้ดูแลระบบได้อนุมัติปรับบทบาทของคุณเป็น ${msg.payload.role_name || (msg.payload.role_id === 2 ? 'Admin' : 'Writer')} เรียบร้อยแล้ว`);
           }
@@ -227,149 +281,8 @@ function logUserActivity(action, detail) {
   localStorage.setItem("nothave_activities", JSON.stringify(userActivities));
 }
 
-// ข้อมูลมังงะ/ไลท์โนเวลเฉพาะที่ตรงตามรูป Book☆Walker (ไม่ใส่หนังสือที่ไม่เกี่ยวข้อง)
-const fallbackEbooks = [
-  {
-    ebook_id: 1,
-    title: "คุณพี่ที่ผมมาส่งข้าวให้จะน่ากลัวเกินไปแล้ว เล่ม 1",
-    author_name: "Abe Tsukasa / Yamada Kanehito",
-    category_id: 1,
-    category_name: "มังงะ",
-    price: 152.00,
-    original_price: 169.00,
-    point_reward: 45,
-    description: "เรื่องราวสุดป่วนของเด็กหนุ่มส่งข้าวกล่องกับคุณพี่สาวข้างห้องที่ดูลึกลับและน่ากลัว แต่แท้จริงแล้วมีมุมที่คาดไม่ถึง!",
-    sample_text: "ตัวอย่างเนื้อหา: 'นี่เธอ... วันนี้เอาเมนูอะไรมาส่งงั้นเหรอ?' เสียงทุ้มต่ำดังขึ้นหลังบานประตูที่เปิดแง้มเพียงเล็กน้อย...",
-    cover_url: "https://images.unsplash.com/photo-1578632767115-351597cf2477?w=500&auto=format&fit=crop&q=80",
-    file_url: "https://mockfile.nothave.com/ebooks/scary_sister_vol1.pdf"
-  },
-  {
-    ebook_id: 2,
-    title: "คุณพี่ที่ผมมาส่งข้าวให้จะน่ากลัวเกินไปแล้ว เล่ม 2",
-    author_name: "Abe Tsukasa / Yamada Kanehito",
-    category_id: 1,
-    category_name: "มังงะ",
-    price: 152.00,
-    original_price: 169.00,
-    point_reward: 45,
-    description: "ความสัมพันธ์เริ่มคืบหน้า เมื่อคุณพี่สาวเริ่มขอร้องให้ทำข้าวกล่องเมนูพิเศษให้!",
-    sample_text: "ตัวอย่างเนื้อหา: 'ถ้าคราวหน้าเธอทำไข่ม้วนหวานมาให้ ฉันอาจจะมีรางวัลให้ก็ได้นะ...'",
-    cover_url: "https://images.unsplash.com/photo-1607604276583-eef5d076aa5f?w=500&auto=format&fit=crop&q=80",
-    file_url: "https://mockfile.nothave.com/ebooks/scary_sister_vol2.pdf"
-  },
-  {
-    ebook_id: 3,
-    title: "คุณพี่ที่ผมมาส่งข้าวให้จะน่ากลัวเกินไปแล้ว เล่ม 3",
-    author_name: "Abe Tsukasa / Yamada Kanehito",
-    category_id: 1,
-    category_name: "มังงะ",
-    price: 152.00,
-    original_price: 169.00,
-    point_reward: 45,
-    description: "การปรากฏตัวของแขกที่ไม่ได้รับเชิญทำให้ความลับของคุณพี่สาวเกือบถูกเปิดเผย!",
-    sample_text: "ตัวอย่างเนื้อหา: 'อย่าบอกเรื่องห้องนี้กับใครเด็ดขาดนะ... สัญญากับฉันสิ'",
-    cover_url: "https://images.unsplash.com/photo-1534447677768-be436bb09401?w=500&auto=format&fit=crop&q=80",
-    file_url: "https://mockfile.nothave.com/ebooks/scary_sister_vol3.pdf"
-  },
-  {
-    ebook_id: 4,
-    title: "คุณพี่ที่ผมมาส่งข้าวให้จะน่ากลัวเกินไปแล้ว เล่ม 4 (จบภาคแรก)",
-    author_name: "Abe Tsukasa / Yamada Kanehito",
-    category_id: 1,
-    category_name: "มังงะ",
-    price: 152.00,
-    original_price: 169.00,
-    point_reward: 45,
-    description: "บทสรุปความอบอุ่นของความสัมพันธ์ระหว่างผู้ส่งข้าวกับคุณพี่สาวข้างห้อง!",
-    sample_text: "ตัวอย่างเนื้อหา: 'ขอบคุณนะ สำหรับข้าวกล่องตลอดหนึ่งปีที่ผ่านมา...'",
-    cover_url: "https://images.unsplash.com/photo-1563089145-599997674d42?w=500&auto=format&fit=crop&q=80",
-    file_url: "https://mockfile.nothave.com/ebooks/scary_sister_vol4.pdf"
-  },
-  {
-    ebook_id: 5,
-    title: "ยมแพ่งยมโลก เล่ม 12",
-    author_name: "Fujimoto Tatsuki",
-    category_id: 1,
-    category_name: "มังงะ",
-    price: 152.00,
-    original_price: 169.00,
-    point_reward: 45,
-    description: "การต่อสู้สุดดุเดือดในแดนชำระบาปที่เดิมพันด้วยจิตวิญญาณแห่งมวลมนุษยชาติ",
-    sample_text: "ตัวอย่างเนื้อหา: 'ถ้าการมีชีวิตอยู่มันทรมานนัก ข้าจะช่วยปลดปล่อยเจ้าเอง!'",
-    cover_url: "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=500&auto=format&fit=crop&q=80",
-    file_url: "https://mockfile.nothave.com/ebooks/underworld_vol12.pdf"
-  },
-  {
-    ebook_id: 6,
-    title: "เพื่อนสะดวกคิส มิตรสะดวกเลิฟ เล่ม 4",
-    author_name: "Akasaka Aka",
-    category_id: 1,
-    category_name: "มังงะ",
-    price: 152.00,
-    original_price: 169.00,
-    point_reward: 45,
-    description: "ความสัมพันธ์แบบเพื่อนสนิทคิดไม่ซื่อที่เริ่มเลยเถิดจนเกินจะถอยกลับ!",
-    sample_text: "ตัวอย่างเนื้อหา: 'เราเป็นแค่เพื่อนกันจริงๆ น่ะเหรอ? แล้วที่จูบกันเมื่อวานคืออะไร?'",
-    cover_url: "https://images.unsplash.com/photo-1560972550-aba3456b5564?w=500&auto=format&fit=crop&q=80",
-    file_url: "https://mockfile.nothave.com/ebooks/kiss_friend_vol4.pdf"
-  },
-  {
-    ebook_id: 7,
-    title: "เพื่อนคนแรกของผมคือสาวสวยอันดับสองของห้อง เล่ม 1",
-    author_name: "Akasaka Aka",
-    category_id: 2,
-    category_name: "หนังสือทั่วไป",
-    price: 185.00,
-    original_price: 220.00,
-    point_reward: 50,
-    description: "หนังสือทั่วไปยอดฮิต เมื่อหนุ่มจืดชืดได้สนิทกับดาวโรงเรียนอันดับสองด้วยความบังเอิญ",
-    sample_text: "ตัวอย่างเนื้อหา: 'ทำไมนายถึงคุยกับฉันแบบสบายใจจัง ไม่เกร็งเหมือนคนอื่นเลยล่ะ?'",
-    cover_url: "https://images.unsplash.com/photo-1518709268805-4e9042af9f23?w=500&auto=format&fit=crop&q=80",
-    file_url: "https://mockfile.nothave.com/ebooks/second_beauty_vol1.pdf"
-  },
-  {
-    ebook_id: 8,
-    title: "ซาซากิกับมิยาโนะ เล่ม 11",
-    author_name: "Abe Tsukasa",
-    category_id: 1,
-    category_name: "มังงะ",
-    price: 152.00,
-    original_price: 169.00,
-    point_reward: 45,
-    description: "ชีวิตประจำวันอันสดใสของรุ่นพี่แบดบอยกับรุ่นน้องหนุ่มน้อยผู้รักการ์ตูนวาย",
-    sample_text: "ตัวอย่างเนื้อหา: 'มิยาโนะ... วันนี้มีมังงะเรื่องใหม่มาแนะนำพี่อีกมั้ย?'",
-    cover_url: "https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?w=500&auto=format&fit=crop&q=80",
-    file_url: "https://mockfile.nothave.com/ebooks/sasaki_miya_vol11.pdf"
-  },
-  {
-    ebook_id: 9,
-    title: "มิเอรุโกะจัง ใครว่าหนูเห็นผี เล่ม 14",
-    author_name: "Fujimoto Tatsuki",
-    category_id: 1,
-    category_name: "มังงะ",
-    price: 152.00,
-    original_price: 169.00,
-    point_reward: 45,
-    description: "สาวมัธยมผู้มองเห็นวิญญาณสยองขวัญแต่ต้องแกล้งทำเป็นมองไม่เห็นเพื่อเอาชีวิตรอด!",
-    sample_text: "ตัวอย่างเนื้อหา: '(อย่ามองนะ... ถ้ามองมันจะรู้ว่าเราเห็น... กรี๊ดดดด!)'",
-    cover_url: "https://images.unsplash.com/photo-1509198397868-475647b2a1e5?w=500&auto=format&fit=crop&q=80",
-    file_url: "https://mockfile.nothave.com/ebooks/mieruko_vol14.pdf"
-  },
-  {
-    ebook_id: 10,
-    title: "เส้นทางจาริกอาถรรพ์ เล่ม 1",
-    author_name: "Rifujin na Magonote",
-    category_id: 3,
-    category_name: "นิยาย - ทั่วไป",
-    price: 230.00,
-    original_price: 329.00,
-    point_reward: 60,
-    description: "นิยายดาร์กแฟนตาซีผจญภัย เดินทางข้ามทวีปต้องสาปเพื่อค้นหาคำตอบแห่งชีวิต",
-    sample_text: "ตัวอย่างเนื้อหา: 'ดินแดนแห่งนี้ไม่มีเทพเจ้าคอยคุ้มครอง มีเพียงดาบในมือเจ้าเท่านั้น...'",
-    cover_url: "https://images.unsplash.com/photo-1512820790803-83ca734da794?w=500&auto=format&fit=crop&q=80",
-    file_url: "https://mockfile.nothave.com/ebooks/dark_pilgrim_vol1.pdf"
-  }
-];
+// คลังหนังสือจริง (ดึงจากฐานข้อมูล Supabase 100%)
+const fallbackEbooks = [];
 
 // ==========================================
 // 4. DATA FETCHING FROM SUPABASE
@@ -395,7 +308,7 @@ async function fetchBooks() {
         `)
         .eq("is_active", true);
 
-      if (!error && data && data.length > 0) {
+      if (!error && data) {
         const pendingList = JSON.parse(localStorage.getItem("nothave_pending_writer_books") || "[]");
         
         allEbooks = data.map(item => {
@@ -411,11 +324,11 @@ async function fetchBooks() {
 
           // 2. ดึงจาก pending tracking list
           const pBook = pendingList.find(p => p.ebook_id === item.ebook_id || p.title === item.title);
-          if (pBook && pBook.author && (!authorName || authorName === "Abe Tsukasa / Yamada Kanehito" || authorName === "ไม่ระบุ")) {
+          if (pBook && pBook.author && (!authorName || authorName === "ไม่ระบุ")) {
             authorName = pBook.author;
           }
 
-          if (!authorName) authorName = "ไม่ระบุ";
+          if (!authorName) authorName = "นักเขียน";
 
           return {
             ebook_id: item.ebook_id,
@@ -425,7 +338,7 @@ async function fetchBooks() {
             point_reward: item.point_reward || 10,
             description: item.description,
             sample_text: item.sample_text || item.description,
-            cover_url: item.cover_url || "https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?w=100",
+            cover_url: item.cover_url || "https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?w=500",
             file_url: item.file_url || "",
             category_id: item.categories?.category_id || 1,
             category_name: (item.categories?.category_name === "ไลท์โนเวล" ? "หนังสือทั่วไป" : (item.categories?.category_name || "ทั่วไป")),
@@ -434,26 +347,27 @@ async function fetchBooks() {
           };
         });
       } else {
-        allEbooks = [...fallbackEbooks];
+        allEbooks = [];
       }
     } else {
-      allEbooks = [...fallbackEbooks];
+      allEbooks = [];
     }
 
-    // นำหนังสือที่ผู้ใช้เพิ่มเอง (customEbooks) เข้ามารวมในรายการ (เฉพาะที่อนุมัติแล้วเท่านั้น)
+    // นำหนังสือที่เพิ่มผ่าน LocalStorage เข้ามารวม (หากมี)
     if (customEbooks && customEbooks.length > 0) {
       const activeCustom = customEbooks.filter(cb => !allEbooks.some(ab => ab.ebook_id === cb.ebook_id) && cb.is_active !== false);
       allEbooks = [...allEbooks, ...activeCustom];
     }
   } catch (err) {
-    console.warn("Supabase fetch warning, using seed ebooks:", err);
-    allEbooks = [...fallbackEbooks];
+    console.warn("Supabase fetch note:", err);
+    allEbooks = [];
   }
 
-  // รับประกันว่าหน้าร้านจะมีหนังสือแสดงผลเสมอ ไม่ว่างเปล่า
-  if (!allEbooks || allEbooks.length === 0) {
-    allEbooks = [...fallbackEbooks];
-  }
+  filteredEbooks = [...allEbooks];
+  renderBooksGrid();
+  renderFeaturedShelves();
+  renderRecentlyViewedShelf();
+  updateCategoryCounts();
   filteredEbooks = [...allEbooks];
   renderBooksGrid();
   renderFeaturedShelves();
@@ -617,9 +531,23 @@ function renderBooksGrid() {
   if (!container) return;
 
   if (filteredEbooks.length === 0) {
-    container.innerHTML = `<div style="grid-column: 1/-1; text-align: center; padding: 40px; color: #888;">
-      ไม่พบหนังสือที่ตรงกับเงื่อนไขการค้นหา
-    </div>`;
+    container.innerHTML = `
+      <div style="grid-column: 1/-1; text-align: center; padding: 48px 20px; background: #ffffff; border: 1px dashed #cbd5e1; border-radius: 12px; color: #64748b; margin: 10px 0;">
+        <div style="font-size: 42px; margin-bottom: 12px;">📖</div>
+        <h4 style="font-size: 17px; font-weight: 700; color: #0f172a; margin: 0 0 6px 0;">ยังไม่มีหนังสือในคลัง</h4>
+        <p style="font-size: 13.5px; color: #64748b; max-width: 480px; margin: 0 auto 16px auto; line-height: 1.6;">
+          ระบบพร้อมให้คุณเพิ่มหนังสือเล่มใหม่ด้วยตนเอง สามารถอัปโหลดไฟล์ PDF ฉบับเต็มและรูปหน้าปกได้ผ่านระบบ Admin หรือ Writer
+        </p>
+        <div style="display: flex; justify-content: center; gap: 10px; flex-wrap: wrap;">
+          <a href="admin.html" class="btn-primary-action" style="padding: 8px 18px; font-size: 13px; text-decoration: none; display: inline-flex; align-items: center; gap: 6px; width: auto;">
+            ⚙️ ระบบหลังบ้าน (Admin)
+          </a>
+          <a href="writer.html" class="btn-secondary-action" style="padding: 8px 18px; font-size: 13px; text-decoration: none; display: inline-flex; align-items: center; gap: 6px; width: auto;">
+            ✍️ ระบบนักเขียน (Writer)
+          </a>
+        </div>
+      </div>
+    `;
     if (countEl) countEl.innerText = "0 จาก 0";
     return;
   }
@@ -636,7 +564,17 @@ function renderFeaturedShelves() {
   updatePromoHeaders();
   const shelf1 = document.getElementById("shelfNewArrivals");
   if (shelf1) {
-    shelf1.innerHTML = allEbooks.slice(0, 6).map(createBookCardHTML).join("");
+    if (allEbooks.length === 0) {
+      shelf1.innerHTML = `
+        <div style="width: 100%; text-align: center; padding: 32px 20px; background: #ffffff; border: 1px dashed #cbd5e1; border-radius: 12px; color: #64748b;">
+          <div style="font-size: 32px; margin-bottom: 6px;">📚</div>
+          <div style="font-weight: 700; color: #1e293b; font-size: 15px;">ยังไม่มีหนังสือในชั้นวาง</div>
+          <div style="font-size: 13px; margin-top: 4px; color: #64748b;">เพิ่มผลงานเล่มแรกของคุณได้ทันทีผ่านระบบ Admin หรือ Writer</div>
+        </div>
+      `;
+    } else {
+      shelf1.innerHTML = allEbooks.slice(0, 6).map(createBookCardHTML).join("");
+    }
   }
 }
 
@@ -2956,6 +2894,7 @@ async function handleAddCustomBook(e) {
   filteredEbooks = [...allEbooks];
   renderBooksGrid();
   renderFeaturedShelves();
+  broadcastRealtimeEvent('book_update');
   closeModal("addBookModal");
   alert(`เพิ่มหนังสือ "${title}" เรียบร้อยแล้ว!${pdfFileName ? `\nไฟล์ PDF: ${pdfFileName}` : ""}\nข้อมูลถูกบันทึกลงระบบแล้วครับ`);
 }

@@ -1257,24 +1257,61 @@
       ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
       : null;
 
-    // Supabase Global Realtime Broadcast Channel across ALL devices
+    // Supabase Global Realtime Broadcast Channel & Postgres Changes across ALL devices
     let globalAdminRealtimeChannel = null;
+
+    function broadcastAdminRealtime(event, payload = {}) {
+      try {
+        if (globalAdminRealtimeChannel) {
+          globalAdminRealtimeChannel.send({
+            type: 'broadcast',
+            event: event,
+            payload: payload
+          });
+        }
+      } catch (err) {
+        console.warn("Admin realtime broadcast error:", event, err);
+      }
+    }
+
     if (sbAdminClient) {
       try {
         globalAdminRealtimeChannel = sbAdminClient.channel('nothave_global_live_room');
         globalAdminRealtimeChannel
+          // Database Table Changes (Instant DB Level Sync)
+          .on('postgres_changes', { event: '*', schema: 'public', table: 'ebooks' }, () => {
+            console.log("⚡ Admin Realtime: ebooks changed in DB");
+            if (typeof fetchAdminInventory === 'function') fetchAdminInventory();
+            if (typeof fetchAndRenderDashboardKPIs === 'function') fetchAndRenderDashboardKPIs();
+          })
+          .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, () => {
+            console.log("⚡ Admin Realtime: orders changed in DB");
+            if (typeof fetchAndRenderOrders === 'function') fetchAndRenderOrders();
+            if (typeof fetchAndRenderDashboardKPIs === 'function') fetchAndRenderDashboardKPIs();
+          })
+          .on('postgres_changes', { event: '*', schema: 'public', table: 'users' }, () => {
+            console.log("⚡ Admin Realtime: users changed in DB");
+            if (typeof fetchAndRenderUsers === 'function') fetchAndRenderUsers();
+          })
+          // Realtime Broadcasts
           .on('broadcast', { event: 'order_update' }, () => {
             if (typeof fetchAndRenderOrders === 'function') fetchAndRenderOrders();
             if (typeof fetchAndRenderDashboardKPIs === 'function') fetchAndRenderDashboardKPIs();
           })
           .on('broadcast', { event: 'book_update' }, () => {
             if (typeof fetchAdminInventory === 'function') fetchAdminInventory();
+            if (typeof fetchAndRenderDashboardKPIs === 'function') fetchAndRenderDashboardKPIs();
           })
           .on('broadcast', { event: 'community_message' }, () => {
             if (typeof renderAdminCommunityMessages === 'function') renderAdminCommunityMessages();
             if (typeof renderAdminPendingRequests === 'function') renderAdminPendingRequests();
           })
-          .subscribe();
+          .on('broadcast', { event: 'community_delete' }, () => {
+            if (typeof renderAdminCommunityMessages === 'function') renderAdminCommunityMessages();
+          })
+          .subscribe((status) => {
+            console.log("Admin Realtime Channel Status:", status);
+          });
       } catch (e) {
         console.warn("Admin global realtime init note:", e);
       }
@@ -1621,6 +1658,7 @@
           await sbAdminClient.from("payments").update({ status: "verified" }).eq("order_id", id);
         }
         logAdminActivity("อนุมัติคำสั่งซื้อ", `แอดมินยืนยันคำสั่งซื้อ #${id} และปลดล็อกดาวน์โหลดสำเร็จ`);
+        broadcastAdminRealtime('order_update', { order_id: id, status: 'confirmed' });
         await fetchAndRenderOrders();
         alert(`อนุมัติคำสั่งซื้อ #${id} เรียบร้อยแล้ว ข้อมูลในฐานข้อมูลและหน้าเว็บลูกค้าจะปลดล็อกทันทีครับ`);
       } catch (err) {
@@ -1635,6 +1673,7 @@
           await sbAdminClient.from("orders").update({ status: "cancelled" }).eq("order_id", id);
         }
         logAdminActivity("ยกเลิกคำสั่งซื้อ", `แอดมินยกเลิกคำสั่งซื้อ #${id}`);
+        broadcastAdminRealtime('order_update', { order_id: id, status: 'cancelled' });
         await fetchAndRenderOrders();
         alert(`ยกเลิกคำสั่งซื้อ #${id} เรียบร้อยแล้ว`);
       } catch (err) {
@@ -1653,6 +1692,7 @@
           if (error) throw error;
         }
         logAdminActivity("ลบคำสั่งซื้อ", `แอดมินลบคำสั่งซื้อ #${id} ออกจากฐานข้อมูล`);
+        broadcastAdminRealtime('order_update', { order_id: id, deleted: true });
         await fetchAndRenderOrders();
         alert(`ลบคำสั่งซื้อ #${id} ออกจากระบบเรียบร้อยแล้ว`);
       } catch (err) {
@@ -2128,6 +2168,7 @@
         }
 
         alert(`✅ อนุมัติหนังสือ "${title}" สำเร็จเรียบร้อยแล้ว!\n\nขณะนี้หนังสือเปิดขายบนหน้าร้านค้า (index.html) แล้วครับ`);
+        broadcastAdminRealtime('book_update');
         await fetchAdminInventory();
       } catch (err) {
         console.error("Approve writer book error:", err);
@@ -2163,6 +2204,7 @@
 
         logAdminActivity("ปฏิเสธหนังสือ", `แอดมินปฏิเสธหนังสือ "${title}" (เหตุผล: ${reason})`);
         alert(`ปฏิเสธหนังสือ "${title}" เรียบร้อยแล้ว (หนังสือจะไม่ถูกนำขึ้นแสดงบนหน้าเว็ป)`);
+        broadcastAdminRealtime('book_update');
         await fetchAdminInventory();
       } catch (err) {
         console.error("Reject writer book error:", err);
@@ -2198,10 +2240,12 @@
         localStorage.setItem("nothave_pending_writer_books", JSON.stringify(pendingList));
 
         logAdminActivity("ลบหนังสือ", `ลบหนังสือ "${title}" (ID: ${id})`);
+        broadcastAdminRealtime('book_update');
         await fetchAdminInventory();
       } catch (e) {
         console.error("Delete book error:", e);
         await sbAdminClient.from("ebooks").update({ is_active: false }).eq("ebook_id", id);
+        broadcastAdminRealtime('book_update');
         await fetchAdminInventory();
       }
     }
@@ -2277,6 +2321,7 @@
 
         logAdminActivity("ลบหนังสือที่เลือก", `แอดมินลบหนังสือที่เลือกจำนวน ${selectedIds.length} เล่ม`);
         alert(`ลบหนังสือที่เลือกจำนวน ${selectedIds.length} เล่ม เรียบร้อยแล้วครับ`);
+        broadcastAdminRealtime('book_update');
         await fetchAdminInventory();
       } catch (err) {
         console.error("Delete selected books error:", err);
@@ -2308,6 +2353,7 @@
 
         logAdminActivity("ลบหนังสือทั้งหมด", `แอดมินลบหนังสือทั้งหมด ${totalCount} เล่มออกจากฐานข้อมูล`);
         alert(`ลบหนังสือทั้งหมด ${totalCount} เล่ม ออกจากฐานข้อมูลเรียบร้อยแล้วครับ`);
+        broadcastAdminRealtime('book_update');
         await fetchAdminInventory();
       } catch (err) {
         console.error("Delete all books error:", err);
@@ -2326,6 +2372,7 @@
         const { error } = await sbAdminClient.from("ebooks").update({ is_active: newStatus }).eq("ebook_id", id);
         if (error) throw error;
         logAdminActivity("เปลี่ยนสถานะหนังสือ", `แอดมินเปลี่ยนสถานะหนังสือ ID: ${id} เป็น ${newStatus ? 'เปิดขาย' : 'ปิดการขาย'}`);
+        broadcastAdminRealtime('book_update');
         await fetchAdminInventory();
       } catch (err) {
         alert("ไม่สามารถเปลี่ยนสถานะได้: " + err.message);
@@ -2348,6 +2395,7 @@
         const { error } = await sbAdminClient.from("ebooks").update({ title: newTitle, price: newPrice }).eq("ebook_id", id);
         if (error) throw error;
         logAdminActivity("แก้ไขหนังสือ", `แอดมินแก้ไขหนังสือ "${newTitle}" ราคา ฿${newPrice.toFixed(2)}`);
+        broadcastAdminRealtime('book_update');
         await fetchAdminInventory();
         alert(`แก้ไขข้อมูลหนังสือ "${newTitle}" ใน Supabase เรียบร้อยแล้ว`);
       } catch (err) {
@@ -2730,12 +2778,14 @@
           logAdminActivity("นักเขียนส่งผลงาน", `นักเขียน "${user ? user.full_name : author}" ส่งหนังสือ "${title}" (รอ Admin อนุมัติก่อนลงหน้าเว็ป)`);
           closeAdminModal();
           e.target.reset();
+          broadcastAdminRealtime('book_update');
           await fetchAdminInventory();
           alert(`🎉 อัพโหลดหนังสือ "${title}" เรียบร้อยแล้ว!\n\nสถานะ: ⏳ รอ Admin อนุมัติ\n\nผลงานจะถูกส่งเข้าคิวรอ Admin ตรวจสอบ เมื่อ Admin กดอนุมัติแล้ว หนังสือจะขึ้นแสดงบนหน้าเว็ปทันทีครับ`);
         } else {
           logAdminActivity("เพิ่มหนังสือใหม่", `แอดมินเพิ่มหนังสือ "${title}" ราคา ฿${price.toFixed(2)}${pdfFileName ? ` (ไฟล์: ${pdfFileName})` : ""}`);
           closeAdminModal();
           e.target.reset();
+          broadcastAdminRealtime('book_update');
           await fetchAdminInventory();
           alert(`เพิ่มหนังสือ "${title}" ลงในฐานข้อมูล Supabase สำเร็จเรียบร้อยแล้วครับ!`);
         }
@@ -3133,6 +3183,9 @@
           created_at: new Date().toISOString()
         });
         localStorage.setItem("nothave_community_messages", JSON.stringify(commMsgs));
+
+        broadcastAdminRealtime('role_update', { email: email, role_id: targetRoleId, role_name: targetRoleName });
+        broadcastAdminRealtime('community_message');
 
         logAdminActivity("อนุมัติบทบาทผู้ใช้", `แอดมินอนุมัติให้ "${fullName}" (${email || 'ID: ' + userId}) เป็น ${targetRoleName}`);
         alert(`อนุมัติให้ "${fullName}" เป็น ${targetRoleName} สำเร็จเรียบร้อยแล้วครับ!`);
