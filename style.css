@@ -234,24 +234,9 @@ button {
   white-space: nowrap;
 }
 
-/* FLOATING COMMUNITY BUTTON (แบบช่อง 2 - โชว์เมื่อล็อกอิน) */
+/* FLOATING COMMUNITY BUTTON - REMOVED */
 .community-fab {
-  position: fixed;
-  bottom: 28px;
-  right: 28px;
-  width: 56px;
-  height: 56px;
-  border-radius: 50%;
-  background: #ffffff;
-  color: #0f172a;
-  border: 1px solid rgba(0, 0, 0, 0.08);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.16), 0 2px 6px rgba(0, 0, 0, 0.08);
-  display: none; /* โชว์เฉพาะเมื่อล็อกอินแล้ว (แบบช่อง 2) */
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  z-index: 1500;
-  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  display: none !important;
 }
 .community-fab:hover {
   transform: translateY(-3px) scale(1.05);
@@ -1957,103 +1942,9 @@ a.user-pill:hover {
    COMMUNITY FLOATING ACTION BUTTON (FAB) & COMMUNITY BOX
    (แสดงเฉพาะเมื่อเข้าสู่ระบบตามรูปที่ 2)
    ======================================================== */
-.community-fab {
-  position: fixed;
-  bottom: 28px;
-  right: 28px;
-  width: 58px;
-  height: 58px;
-  border-radius: 50%;
-  background: #ffffff;
-  border: 1px solid rgba(0, 0, 0, 0.07);
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15), 0 2px 6px rgba(0, 0, 0, 0.08);
-  display: none; /* Revealed only when logged in via updateUserInterface() */
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  z-index: 999;
-  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
-  outline: none;
-  -webkit-tap-highlight-color: transparent;
-}
-
-.community-fab:hover {
-  transform: translateY(-3px) scale(1.05);
-  box-shadow: 0 8px 26px rgba(0, 0, 0, 0.22), 0 3px 8px rgba(0, 0, 0, 0.1);
-  background: #ffffff;
-}
-
-.community-fab:active {
-  transform: translateY(0) scale(0.97);
-}
-
-.community-fab svg {
-  color: #111827;
-  stroke: #111827;
-  transition: transform 0.2s ease;
-}
-
-.community-fab:hover svg {
-  transform: rotate(-6deg) scale(1.08);
-}
-
-.community-fab .fab-badge {
-  position: absolute;
-  top: 1px;
-  right: 1px;
-  width: 14px;
-  height: 14px;
-  background: #ef4444;
-  border: 2.5px solid #ffffff;
-  border-radius: 50%;
-  box-shadow: 0 1px 4px rgba(239, 68, 68, 0.4);
-}
-
-/* Tooltip on FAB hover */
-.community-fab .fab-tooltip {
-  position: absolute;
-  right: 70px;
-  background: #1e293b;
-  color: #ffffff;
-  padding: 6px 12px;
-  border-radius: 8px;
-  font-size: 12px;
-  font-weight: 600;
-  white-space: nowrap;
-  pointer-events: none;
-  opacity: 0;
-  transform: translateX(8px);
-  transition: all 0.2s ease;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
-}
-
-.community-fab:hover .fab-tooltip {
-  opacity: 1;
-  transform: translateX(0);
-}
-
-/* COMMUNITY DRAWER / BOX */
+.community-fab,
 .community-box {
-  position: fixed;
-  bottom: 96px;
-  right: 28px;
-  width: 410px;
-  max-width: calc(100vw - 32px);
-  height: 580px;
-  max-height: calc(100vh - 120px);
-  background: #ffffff;
-  border-radius: 18px;
-  box-shadow: 0 16px 45px rgba(0, 0, 0, 0.18), 0 4px 14px rgba(0, 0, 0, 0.08);
-  border: 1px solid #e2e8f0;
-  z-index: 1000;
-  display: none;
-  flex-direction: column;
-  overflow: hidden;
-  animation: commSlideUp 0.26s cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-.community-box.active {
-  display: flex;
+  display: none !important;
 }
 
 @keyframes commSlideUp {
