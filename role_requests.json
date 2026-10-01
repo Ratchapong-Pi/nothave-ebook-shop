@@ -1,0 +1,101 @@
+[
+  {
+    "id": "REQ-1790826826308",
+    "user_id": 2,
+    "full_name": "สมชาย สายอ่าน",
+    "email": "somchai@gmail.com",
+    "current_role_id": 1,
+    "target_role_id": 3,
+    "target_role_name": "writer",
+    "message": "@Admin สวัสดีครับ ขออนุมัติบทบาท Writer เพื่อลงผลงาน E-Book ในร้านครับ",
+    "is_tagged_admin": true,
+    "status": "approved",
+    "created_at": "2026-10-01T03:53:46.308Z"
+  },
+  {
+    "id": "REQ-1790826354108",
+    "user_id": 2,
+    "full_name": "สมชาย สายอ่าน",
+    "email": "somchai@gmail.com",
+    "current_role_id": 1,
+    "target_role_id": 3,
+    "target_role_name": "writer",
+    "message": "@Admin สวัสดีครับ ขออนุมัติบทบาท Writer เพื่อลงผลงาน E-Book ในร้านครับ",
+    "is_tagged_admin": true,
+    "status": "approved",
+    "created_at": "2026-10-01T03:45:54.108Z"
+  },
+  {
+    "id": "REQ-1790823634149",
+    "user_id": 2,
+    "full_name": "สมชาย สายอ่าน",
+    "email": "somchai@gmail.com",
+    "current_role_id": 1,
+    "target_role_id": 3,
+    "target_role_name": "writer",
+    "message": "@Admin สวัสดีครับ ขออนุมัติบทบาท Writer เพื่อลงผลงาน E-Book ในร้านครับ",
+    "is_tagged_admin": true,
+    "status": "approved",
+    "created_at": "2026-10-01T03:00:34.149Z"
+  },
+  {
+    "id": "REQ-1790823153291",
+    "user_id": 2,
+    "full_name": "สมชาย สายอ่าน",
+    "email": "somchai@gmail.com",
+    "current_role_id": 1,
+    "target_role_id": 3,
+    "target_role_name": "writer",
+    "message": "@Admin สวัสดีครับ ขออนุมัติบทบาท Writer เพื่อลงผลงาน E-Book ในร้านครับ",
+    "is_tagged_admin": true,
+    "status": "approved",
+    "created_at": "2026-10-01T02:52:33.291Z"
+  },
+  {
+    "id": "REQ-1790822859279",
+    "user_id": 2,
+    "full_name": "สมชาย สายอ่าน",
+    "email": "somchai@gmail.com",
+    "current_role_id": 1,
+    "target_role_id": 3,
+    "target_role_name": "writer",
+    "message": "@Admin ขออนุมัติเป็นนักเขียน Writer ครับ\n@Admin สวัสดีครับ ขออนุมัติบทบาท Writer เพื่อลงผลงาน E-Book ในร้านครับ",
+    "is_tagged_admin": true,
+    "status": "approved",
+    "created_at": "2026-10-01T02:47:39.279Z"
+  },
+  {
+    "id": "REQ-1790822833604",
+    "user_id": 2,
+    "full_name": "สมชาย สายอ่าน",
+    "email": "somchai@gmail.com",
+    "current_role_id": 1,
+    "target_role_id": 3,
+    "target_role_name": "writer",
+    "message": "@Admin ขออนุมัติเป็นนักเขียน Writer ครับ\n@Admin สวัสดีครับ ขออนุมัติบทบาท Writer เพื่อลงผลงาน E-Book ในร้านครับ",
+    "is_tagged_admin": true,
+    "status": "rejected",
+    "created_at": "2026-10-01T02:47:13.604Z"
+  },
+  {
+    "fullName": "สมชาย สายอ่าน",
+    "email": "somchai@gmail.com",
+    "currentRoleId": 1,
+    "targetRoleId": 3,
+    "targetRoleName": "writer",
+    "message": "@Admin สวัสดีครับ ขออนุมัติ Writer ครับ"
+  },
+  {
+    "id": "REQ-1002",
+    "user_id": 2,
+    "full_name": "สมชาย สายอ่าน",
+    "email": "somchai@gmail.com",
+    "current_role_id": 1,
+    "target_role_id": 3,
+    "target_role_name": "writer",
+    "message": "@Admin สวัสดีครับ ขออนุมัติบทบาท Writer เพื่อลงขาย E-Book ในร้านครับ",
+    "is_tagged_admin": true,
+    "status": "rejected",
+    "created_at": "2026-10-01T09:35:00.000Z"
+  }
+]
