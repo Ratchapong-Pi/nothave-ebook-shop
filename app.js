@@ -50,6 +50,20 @@ if (sbClient) {
           } catch (e) {}
         }
       })
+      .on('broadcast', { event: 'community_delete' }, (msg) => {
+        if (msg && msg.payload) {
+          try {
+            let list = JSON.parse(localStorage.getItem("nothave_community_messages") || "[]");
+            if (msg.payload.clearAll) {
+              list = [];
+            } else if (msg.payload.id) {
+              list = list.filter(m => m.id !== msg.payload.id);
+            }
+            localStorage.setItem("nothave_community_messages", JSON.stringify(list));
+            if (typeof renderCommunityMessages === 'function') renderCommunityMessages();
+          } catch (e) {}
+        }
+      })
       .on('broadcast', { event: 'role_update' }, (msg) => {
         if (msg && msg.payload && currentUser) {
           const userEmail = (currentUser.email || "").toLowerCase().trim();
@@ -3446,46 +3460,26 @@ async function handleSendRoleRequest(e) {
 let currentCommTab = "all"; // 'all' or 'admin'
 
 function initCommunityFeed() {
-  const existing = localStorage.getItem("nothave_community_messages");
-  if (!existing || JSON.parse(existing).length === 0) {
-    const seed = [
-      {
-        id: "COMM-1",
-        user_id: 1,
-        author: "ผู้ดูแลร้าน (Admin)",
-        email: "admin@bookstore.com",
-        role_id: 2,
-        role_name: "admin",
-        message: "ยินดีต้อนรับสู่คอมมูนิตี้ร้านหนังสือครับ! 🌟 พื้นที่นี้เปิดให้สมาชิกทุกคนแลกเปลี่ยนความคิดเห็น รีวิวหนังสือ หรือหากต้องการลงผลงาน E-Book สามารถกดแท็ก @Admin เพื่อขออนุมัติบทบาท Writer ได้ตลอด 24 ชม. ครับ",
-        is_tagged_admin: false,
-        created_at: new Date(Date.now() - 3600000 * 3).toISOString()
-      },
-      {
-        id: "COMM-2",
-        user_id: 101,
-        author: "นารูโตะ นักเขียนไฟแรง",
-        email: "naruto@writer.com",
-        role_id: 3,
-        role_name: "writer",
-        message: "สวัสดีเพื่อนๆ นักอ่านทุกคนครับ! ตอนนี้กำลังเตรียมปล่อยไลท์โนเวลเรื่องใหม่ ฝากติดตามและทดลองอ่านกันด้วยนะครับ 📖✨",
-        is_tagged_admin: false,
-        created_at: new Date(Date.now() - 3600000 * 1.5).toISOString()
-      },
-      {
-        id: "COMM-3",
-        user_id: 102,
-        author: "สมชาย สายอ่าน",
-        email: "somchai@gmail.com",
-        role_id: 1,
-        role_name: "customer",
-        message: "@Admin สวัสดีครับ ขออนุมัติบทบาทเป็นนักเขียน Writer ครับ มีผลงานนิยาย E-Book พร้อมวางจำหน่ายในระบบแล้วครับ ขอบคุณครับ 🙏",
-        is_tagged_admin: true,
-        target_role_id: 3,
-        target_role_name: "writer",
-        created_at: new Date(Date.now() - 1800000).toISOString()
-      }
-    ];
-    localStorage.setItem("nothave_community_messages", JSON.stringify(seed));
+  const isSeeded = localStorage.getItem("nothave_community_seeded");
+  if (!isSeeded) {
+    const existing = localStorage.getItem("nothave_community_messages");
+    if (!existing) {
+      const seed = [
+        {
+          id: "COMM-1",
+          user_id: 1,
+          author: "ผู้ดูแลร้าน (Admin)",
+          email: "admin@bookstore.com",
+          role_id: 2,
+          role_name: "admin",
+          message: "ยินดีต้อนรับสู่คอมมูนิตี้ร้านหนังสือครับ! 🌟 พื้นที่นี้เปิดให้สมาชิกทุกคนแลกเปลี่ยนความคิดเห็น รีวิวหนังสือ หรือหากต้องการลงผลงาน E-Book สามารถกดแท็ก @Admin เพื่อขออนุมัติบทบาท Writer ได้ตลอด 24 ชม. ครับ",
+          is_tagged_admin: false,
+          created_at: new Date(Date.now() - 3600000 * 3).toISOString()
+        }
+      ];
+      localStorage.setItem("nothave_community_messages", JSON.stringify(seed));
+    }
+    localStorage.setItem("nothave_community_seeded", "true");
   }
 }
 
@@ -3714,7 +3708,7 @@ function renderCommunityMessages() {
         <div class="comm-msg-text">${content}</div>
         ${targetRoleBadge}
 
-        <!-- Interactive card footer (ตอบกลับ & Like) -->
+        <!-- Interactive card footer (ตอบกลับ & Like & Delete) -->
         <div class="comm-card-footer">
           <div class="comm-card-actions">
             <button type="button" class="btn-card-reply" onclick="startCommReply('${msg.id}')" title="ตอบกลับข้อความนี้">
@@ -3724,6 +3718,11 @@ function renderCommunityMessages() {
               <span>${isLiked ? '❤️' : '🤍'}</span>
               <span>${likeCount > 0 ? likeCount : ''}</span>
             </button>
+            ${(isOwn || (currentUser && currentUser.role_id === 2)) ? `
+              <button type="button" class="btn-card-reply" style="color:#ef4444; border-color:#fca5a5;" onclick="deleteCommunityMessage('${msg.id}')" title="ลบข้อความนี้">
+                <span>🗑️</span> ลบ
+              </button>
+            ` : ''}
           </div>
           <span style="font-size:10px; color:#94a3b8;">${isTaggedAdmin ? '🏷️ ขอสิทธิ์' : ''}</span>
         </div>
@@ -3733,6 +3732,28 @@ function renderCommunityMessages() {
 
   // Smooth scroll to latest message
   listEl.scrollTop = listEl.scrollHeight;
+}
+
+function deleteCommunityMessage(msgId) {
+  if (!confirm("คุณต้องการลบข้อความนี้ใช่หรือไม่?")) return;
+  try {
+    let list = JSON.parse(localStorage.getItem("nothave_community_messages") || "[]");
+    list = list.filter(m => m.id !== msgId);
+    localStorage.setItem("nothave_community_messages", JSON.stringify(list));
+    renderCommunityMessages();
+
+    if (globalRealtimeChannel) {
+      try {
+        globalRealtimeChannel.send({
+          type: 'broadcast',
+          event: 'community_delete',
+          payload: { id: msgId }
+        });
+      } catch (e) {}
+    }
+  } catch (err) {
+    console.warn("Delete comm msg note:", err);
+  }
 }
 
 function sendCommunityMessage() {
